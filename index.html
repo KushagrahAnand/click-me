@@ -217,51 +217,113 @@
             const fields = ['ip-address', 'location', 'isp', 'timezone', 'coordinates'];
             fields.forEach(field => {
                 document.getElementById(field).innerHTML = '<div class="loading"></div>';
+                document.getElementById(field).closest('.info-card').classList.remove('error');
             });
             document.getElementById('map-link').style.display = 'none';
 
-            try {
-                // Using ipinfo.io for comprehensive data
-                const response = await fetch('https://ipinfo.io/json');
-                const data = await response.json();
-
-                // Update IP address
-                document.getElementById('ip-address').textContent = data.ip || 'Not available';
-
-                // Update location
-                const location = data.city && data.region && data.country 
-                    ? `${data.city}, ${data.region}, ${data.country}` 
-                    : 'Location not available';
-                document.getElementById('location').textContent = location;
-
-                // Update ISP
-                document.getElementById('isp').textContent = data.org || 'Not available';
-
-                // Update timezone
-                document.getElementById('timezone').textContent = data.timezone || 'Not available';
-
-                // Update coordinates
-                if (data.loc) {
-                    const [lat, lon] = data.loc.split(',');
-                    document.getElementById('coordinates').textContent = `${lat}, ${lon}`;
-                    
-                    // Show map link
-                    const mapLink = document.getElementById('map-link');
-                    mapLink.href = `https://www.google.com/maps?q=${lat},${lon}`;
-                    mapLink.style.display = 'inline-block';
-                } else {
-                    document.getElementById('coordinates').textContent = 'Not available';
+            // Try multiple APIs for better reliability
+            const apis = [
+                {
+                    url: 'https://ipapi.co/json/',
+                    parser: (data) => ({
+                        ip: data.ip,
+                        city: data.city,
+                        region: data.region,
+                        country: data.country_name,
+                        org: data.org,
+                        timezone: data.timezone,
+                        lat: data.latitude,
+                        lon: data.longitude
+                    })
+                },
+                {
+                    url: 'https://ip-api.com/json/',
+                    parser: (data) => ({
+                        ip: data.query,
+                        city: data.city,
+                        region: data.regionName,
+                        country: data.country,
+                        org: data.isp,
+                        timezone: data.timezone,
+                        lat: data.lat,
+                        lon: data.lon
+                    })
+                },
+                {
+                    url: 'https://ipinfo.io/json',
+                    parser: (data) => {
+                        const [lat, lon] = data.loc ? data.loc.split(',') : [null, null];
+                        return {
+                            ip: data.ip,
+                            city: data.city,
+                            region: data.region,
+                            country: data.country,
+                            org: data.org,
+                            timezone: data.timezone,
+                            lat: lat,
+                            lon: lon
+                        };
+                    }
                 }
+            ];
 
-            } catch (error) {
-                console.error('Error fetching location data:', error);
-                
-                // Show error state
-                fields.forEach(field => {
-                    const element = document.getElementById(field);
-                    element.textContent = 'Error loading data';
-                    element.closest('.info-card').classList.add('error');
-                });
+            for (let i = 0; i < apis.length; i++) {
+                try {
+                    console.log(`Trying API ${i + 1}: ${apis[i].url}`);
+                    
+                    const response = await fetch(apis[i].url);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const rawData = await response.json();
+                    const data = apis[i].parser(rawData);
+
+                    console.log('API Response:', data);
+
+                    // Update IP address
+                    document.getElementById('ip-address').textContent = data.ip || 'Not available';
+
+                    // Update location
+                    const location = data.city && data.region && data.country 
+                        ? `${data.city}, ${data.region}, ${data.country}` 
+                        : 'Location not available';
+                    document.getElementById('location').textContent = location;
+
+                    // Update ISP
+                    document.getElementById('isp').textContent = data.org || 'Not available';
+
+                    // Update timezone
+                    document.getElementById('timezone').textContent = data.timezone || 'Not available';
+
+                    // Update coordinates
+                    if (data.lat && data.lon) {
+                        document.getElementById('coordinates').textContent = `${data.lat}, ${data.lon}`;
+                        
+                        // Show map link
+                        const mapLink = document.getElementById('map-link');
+                        mapLink.href = `https://www.google.com/maps?q=${data.lat},${data.lon}`;
+                        mapLink.style.display = 'inline-block';
+                    } else {
+                        document.getElementById('coordinates').textContent = 'Not available';
+                    }
+
+                    // If we reach here, API call was successful
+                    return;
+
+                } catch (error) {
+                    console.error(`API ${i + 1} failed:`, error);
+                    
+                    // If this is the last API and it failed, show error
+                    if (i === apis.length - 1) {
+                        fields.forEach(field => {
+                            const element = document.getElementById(field);
+                            element.textContent = 'Unable to load data';
+                            element.closest('.info-card').classList.add('error');
+                        });
+                    }
+                    // Continue to next API
+                }
             }
         }
 
